@@ -40,7 +40,7 @@ class VirusTotalAPI:
             # print(response)
             data = response.json()
             if response.status_code == 200:
-                cache.set(cache_key, data, self.cache_timeout)
+                cache.set(cache_key, data)
                 return data
             # print(data)
             # time.sleep(delay)
