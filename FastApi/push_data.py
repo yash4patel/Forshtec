@@ -1,12 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, UploadFile, File as FastAPIFile
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse,JSONResponse
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import shutil
 import os
 import uuid
-
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from database import SessionLocal, engine
 import models, schemas
 from vt_client import VirusTotalClient
@@ -22,7 +24,16 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Initialize FastAPI and Jinja2 templates
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
+# Rate limit exceeded handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": "Too many requests. Please try again later."},
+    )
 # Create DB tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -42,8 +53,11 @@ def get_vt_client():
 # GET: Domain Analysis
 # ------------------------------------
 @app.get("/domain/{domain_name}", response_model=schemas.DomainAnalysisBase)
+@limiter.limit("4/minute")
+@limiter.limit("500/day")
 async def get_domain(
     domain_name: str,
+    request: Request,
     db: Session = Depends(get_db),
     vt_client: VirusTotalClient = Depends(get_vt_client)
 ):
@@ -65,8 +79,11 @@ async def get_domain(
 # GET: IP Analysis
 # ------------------------------------
 @app.get("/ip/{ip}", response_model=schemas.IPAddressBase)
+@limiter.limit("4/minute")
+@limiter.limit("500/day")
 async def get_ip(
     ip: str,
+    request:Request,
     db: Session = Depends(get_db),
     vt_client: VirusTotalClient = Depends(get_vt_client)
 ):
@@ -89,6 +106,8 @@ async def get_ip(
 # GET: HTML Upload Form
 # ------------------------------------
 @app.get("/file/upload", response_class=HTMLResponse)
+@limiter.limit("4/minute")
+@limiter.limit("500/day")
 def upload_form(request: Request):
     return templates.TemplateResponse("upload_file.html", {"request": request})
 
@@ -96,7 +115,10 @@ def upload_form(request: Request):
 # POST: Upload File and Submit to VT
 # ------------------------------------
 @app.post("/file/file-id/")
+@limiter.limit("4/minute")
+@limiter.limit("500/day")
 async def handle_file_upload(
+    request:Request,
     file: UploadFile = FastAPIFile(...),
     vt_client: VirusTotalClient = Depends(get_vt_client),
     db: Session = Depends(get_db)
