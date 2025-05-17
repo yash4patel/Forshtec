@@ -1,0 +1,6 @@
+# requirements.txt
+fastapi
+sqlalchemy
+psycopg2-binary  # PostgreSQL adapter
+python-dotenv
+uvicorn
